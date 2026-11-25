@@ -1,0 +1,151 @@
+# Enforces the Exoverse pull request branch policy.
+# The event payload supplies the source (head) and target (base). This check
+# does not need the git tree, and branch history cannot prove which branch a
+# feature was created from, so the job does not check out the repository.
+
+name: Branch policy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+    branches:
+      - main
+      - develop
+
+permissions: {}
+
+jobs:
+  validate-branches:
+    name: Validate source and target branches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request branches
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          validate_pr_branches() {
+            local base="$1"
+            local head="$2"
+
+            if [[ "$base" == "main" ]]; then
+              if [[ "$head" == "develop" ]]; then
+                return 0
+              fi
+              if [[ "$head" =~ ^feature/.+$ ]]; then
+                echo "Feature branches cannot target main. Open this pull request against develop. Only develop may target main."
+                return 1
+              fi
+              if [[ "$head" =~ ^bugfix/.+$ ]]; then
+                echo "Bug-fix branches cannot target main. Open this pull request against develop. Only develop may target main."
+                return 1
+              fi
+              if [[ "$head" =~ ^hotfix/.+$ ]]; then
+                echo "Hotfix branches cannot target main. Open this pull request against develop. Production hotfixes still enter main only from develop."
+                return 1
+              fi
+              echo "Only develop may target main. feature/*, bugfix/*, and hotfix/* must target develop."
+              return 1
+            fi
+
+            if [[ "$base" == "develop" ]]; then
+              if [[ "$head" =~ ^feature/.+$ || "$head" =~ ^bugfix/.+$ || "$head" =~ ^hotfix/.+$ ]]; then
+                return 0
+              fi
+              echo "Pull requests to develop must come from feature/*, bugfix/*, or hotfix/*. Other sources, including main, are not accepted. Only develop may target main."
+              return 1
+            fi
+
+            echo "This check only accepts pull requests targeting develop or main."
+            return 1
+          }
+
+          failures=0
+
+          check() {
+            local expect="$1"
+            local head="$2"
+            local base="$3"
+            local snippet="${4:-}"
+            local output status
+
+            set +e
+            output=$(validate_pr_branches "$base" "$head" 2>&1)
+            status=$?
+            set -e
+
+            if [[ "$expect" == "pass" && "$status" -ne 0 ]]; then
+              echo "Self-test failed: expected pass for '${head}' → '${base}'."
+              echo "$output"
+              failures=$((failures + 1))
+              return
+            fi
+            if [[ "$expect" == "fail" && "$status" -eq 0 ]]; then
+              echo "Self-test failed: expected failure for '${head}' → '${base}'."
+              failures=$((failures + 1))
+              return
+            fi
+            if [[ "$expect" == "pass" && -n "$output" ]]; then
+              echo "Self-test failed: pass case '${head}' → '${base}' printed a message."
+              echo "$output"
+              failures=$((failures + 1))
+              return
+            fi
+            if [[ -n "$snippet" && "$output" != *"$snippet"* ]]; then
+              echo "Self-test failed: message for '${head}' → '${base}' did not include '${snippet}'."
+              echo "$output"
+              failures=$((failures + 1))
+              return
+            fi
+            echo "ok ${expect}: ${head} → ${base}"
+          }
+
+          check pass "feature/homepage" develop
+          check pass "bugfix/null-label" develop
+          check pass "hotfix/api-outage" develop
+          check pass "feature/homepage/hero" develop
+          check pass develop main
+
+          check fail "feature/homepage" main "Feature branches cannot target main"
+          check fail "bugfix/null-label" main "Bug-fix branches cannot target main"
+          check fail "hotfix/api-outage" main "Hotfix branches cannot target main"
+          check fail "topic/random" main "Only develop may target main"
+          check fail "topic/random" develop "must come from feature/*"
+          check fail main develop "including main"
+          check fail feature develop "must come from feature/*"
+          check fail "Feature/Homepage" develop "must come from feature/*"
+          check fail "release/1.0" main "Only develop may target main"
+          check fail "release/1.0" develop "must come from feature/*"
+          check fail develop develop "must come from feature/*"
+          check fail main main "Only develop may target main"
+          check fail "hotfix/api-outage" "release" "targeting develop or main"
+
+          if [[ "$failures" -ne 0 ]]; then
+            echo "${failures} branch-policy self-test(s) failed."
+            exit 1
+          fi
+          echo "All branch-policy self-tests passed."
+
+          if [[ -z "${BASE_REF}" || -z "${HEAD_REF}" ]]; then
+            echo "BASE_REF and HEAD_REF are required. Refusing to skip the pull request check."
+            exit 1
+          fi
+
+          set +e
+          result=$(validate_pr_branches "$BASE_REF" "$HEAD_REF" 2>&1)
+          status=$?
+          set -e
+
+          if [[ "$status" -ne 0 ]]; then
+            echo "$result"
+            echo "Rejected pull request: '${HEAD_REF}' → '${BASE_REF}'."
+            annotation="${result//%/%25}"
+            annotation="${annotation//$'\n'/%0A}"
+            annotation="${annotation//$'\r'/%0D}"
+            echo "::error title=Branch policy::${annotation} Rejected: ${HEAD_REF} → ${BASE_REF}."
+            exit 1
+          fi
+
+          echo "Branch policy passed: '${HEAD_REF}' → '${BASE_REF}'."
