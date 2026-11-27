@@ -1,0 +1,3 @@
+# NASA fixtures are raw archive responses with a recorded SHA-256.
+# -text disables line-ending conversion so checked-out bytes always match the checksum.
+backend/src/test/resources/fixtures/nasa/** -text whitespace=cr-at-eol
