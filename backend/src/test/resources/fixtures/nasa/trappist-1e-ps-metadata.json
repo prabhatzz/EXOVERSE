@@ -1,0 +1,13 @@
+{
+  "source" : "NASA Exoplanet Archive",
+  "tapEndpoint" : "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+  "adqlQuery" : "select * from ps where pl_name = 'TRAPPIST-1 e'",
+  "requestUrl" : "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+ps+where+pl_name+%3D+%27TRAPPIST-1+e%27&format=json",
+  "retrievedAtUtc" : "2026-11-27T09:38:01.067387200Z",
+  "httpStatus" : 200,
+  "responseContentType" : "application/json",
+  "fixtureFile" : "trappist-1e-ps.json",
+  "recordCount" : 5,
+  "responseSizeBytes" : 48098,
+  "sha256" : "b717c41148591d9e4847161a1ac8ac0225071775b851b2ac4d5ab90629706ec5"
+}
